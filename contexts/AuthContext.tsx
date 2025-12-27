@@ -20,42 +20,42 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const [loading, setLoading] = useState(true);
   const mounted = useRef(true);
 
-  // Helper to safely construct user object
-  const constructUser = async (sessionUser: any): Promise<User | null> => {
-    if (!sessionUser) return null;
-
-    // 1. Basic info from session
-    let userData: User = {
-      id: sessionUser.id,
-      email: sessionUser.email || '',
-      // Safe access to metadata, fallback to 'User'
-      name: sessionUser.user_metadata?.name || 'User',
-      avatar_url: sessionUser.user_metadata?.avatar_url
-    };
-
-    // 2. Fetch profile details from database
+  // Helper to fetch extra profile data without blocking the UI
+  const fetchProfileAndMerge = async (userId: string) => {
     try {
       const { data } = await supabase
         .from('profiles')
         .select('*')
-        .eq('id', sessionUser.id)
+        .eq('id', userId)
         .maybeSingle();
 
-      if (data) {
-        userData.name = data.full_name || userData.name;
-        userData.avatar_url = data.avatar_url || userData.avatar_url;
+      if (data && mounted.current) {
+        setUser((prev) => {
+          if (!prev || prev.id !== userId) return prev;
+          return {
+            ...prev,
+            name: data.full_name || prev.name,
+            avatar_url: data.avatar_url || prev.avatar_url
+          };
+        });
       }
     } catch (err) {
-      console.warn("Profile fetch failed, using session data only", err);
+      console.warn("Background profile fetch failed", err);
     }
-
-    return userData;
   };
 
   useEffect(() => {
     mounted.current = true;
 
-    // Initialize Guest Count from LocalStorage
+    // Safety fallback: Force app to load after 2.5 seconds even if Auth hangs
+    const safetyTimeout = setTimeout(() => {
+      if (mounted.current && loading) {
+        console.warn("Auth initialization timed out - forcing app render");
+        setLoading(false);
+      }
+    }, 2500);
+
+    // Initialize Guest Count
     try {
       const count = parseInt(localStorage.getItem(LOCAL_STORAGE_KEYS.GUEST_COUNT) || '0', 10);
       setGuestUsageCount(isNaN(count) ? 0 : count);
@@ -63,46 +63,83 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       console.warn("Could not access local storage");
     }
 
-    // Initialization Logic
+    // Main Initialization Logic
     const initializeAuth = async () => {
       try {
-        // 1. Get initial session explicitly
-        const { data: { session } } = await supabase.auth.getSession();
+        // 1. Get Session directly (usually synchronous-like if in local storage)
+        const { data: { session }, error } = await supabase.auth.getSession();
         
+        if (error) {
+           throw error;
+        }
+
         if (session?.user) {
-          const userDetails = await constructUser(session.user);
-          if (mounted.current) setUser(userDetails);
+          // 2. Construct User immediately from Session Data
+          // We do NOT wait for the 'profiles' table fetch here to avoid blocking the UI
+          const basicUser: User = {
+            id: session.user.id,
+            email: session.user.email || '',
+            name: session.user.user_metadata?.name || 'User',
+            avatar_url: session.user.user_metadata?.avatar_url
+          };
+
+          if (mounted.current) {
+            setUser(basicUser);
+            // UNBLOCK UI IMMEDIATELY
+            setLoading(false);
+          }
+
+          // 3. Fetch full profile details in the background
+          fetchProfileAndMerge(session.user.id);
+
         } else {
-          if (mounted.current) setUser(null);
+          // No user session
+          if (mounted.current) {
+            setUser(null);
+            setLoading(false);
+          }
         }
       } catch (error) {
         console.error("Auth initialization error:", error);
-        if (mounted.current) setUser(null);
-      } finally {
-        if (mounted.current) setLoading(false);
+        if (mounted.current) {
+          setUser(null);
+          setLoading(false);
+        }
       }
     };
 
     initializeAuth();
 
-    // 2. Listen for subsequent changes
+    // Listen for auth changes
     const { data: { subscription } } = supabase.auth.onAuthStateChange(async (event, session) => {
       if (!mounted.current) return;
 
-      // Only handle updates if we aren't loading (initial load handled by getSession)
-      // Or if the event explicitly indicates a change that requires re-fetching
       if (event === 'SIGNED_IN' || event === 'TOKEN_REFRESHED' || event === 'USER_UPDATED') {
         if (session?.user) {
-          const userDetails = await constructUser(session.user);
-          if (mounted.current) setUser(userDetails);
+          // Update user state
+          const basicUser: User = {
+            id: session.user.id,
+            email: session.user.email || '',
+            name: session.user.user_metadata?.name || 'User',
+            avatar_url: session.user.user_metadata?.avatar_url
+          };
+          setUser(basicUser);
+          setLoading(false);
+          // Fetch updates in background
+          fetchProfileAndMerge(session.user.id);
         }
       } else if (event === 'SIGNED_OUT') {
-        if (mounted.current) setUser(null);
+        setUser(null);
+        setLoading(false);
+      } else if (event === 'INITIAL_SESSION') {
+        // Supabase sometimes fires this. Ensure loading is off.
+        setLoading(false);
       }
     });
 
     return () => {
       mounted.current = false;
+      clearTimeout(safetyTimeout);
       subscription.unsubscribe();
     };
   }, []);
@@ -165,8 +202,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     try {
       const { data: { session } } = await supabase.auth.getSession();
       if (session?.user) {
-        const updatedUser = await constructUser(session.user);
-        if (mounted.current) setUser(updatedUser);
+         fetchProfileAndMerge(session.user.id);
       }
     } catch (e) {
       console.error("Failed to update user context", e);
@@ -187,7 +223,14 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       hasAttemptsRemaining,
       updateUser
     }}>
-      {!loading && children}
+      {loading ? (
+        // Optional: Simple Loading Spinner instead of blank screen
+        <div className="min-h-screen flex items-center justify-center bg-slate-950">
+           <div className="w-8 h-8 border-4 border-brand-500 border-t-transparent rounded-full animate-spin"></div>
+        </div>
+      ) : (
+        children
+      )}
     </AuthContext.Provider>
   );
 };
