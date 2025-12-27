@@ -2,8 +2,9 @@ import { GoogleGenAI, Type } from "@google/genai";
 import { GeneratedPassword, PasswordComplexity } from "../types";
 
 // Initialize Gemini Client
-// Safety check: ensure 'process' exists before accessing it to prevent browser crashes
-const apiKey = (typeof process !== 'undefined' && process.env) ? process.env.API_KEY : '';
+// The 'process.env.API_KEY' string is replaced by Vite during build time with the actual key.
+// We cast to string to satisfy TypeScript.
+const apiKey = (process.env.API_KEY as string) || '';
 const ai = new GoogleGenAI({ apiKey: apiKey });
 
 const MODEL_NAME = 'gemini-3-flash-preview';
