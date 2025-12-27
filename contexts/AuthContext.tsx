@@ -20,13 +20,19 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
   useEffect(() => {
     // 1. Initialize Guest Count from LocalStorage
-    const count = parseInt(localStorage.getItem(LOCAL_STORAGE_KEYS.GUEST_COUNT) || '0', 10);
-    setGuestUsageCount(count);
+    try {
+      const count = parseInt(localStorage.getItem(LOCAL_STORAGE_KEYS.GUEST_COUNT) || '0', 10);
+      setGuestUsageCount(count);
+    } catch (e) {
+      console.warn("Could not access local storage");
+    }
 
     // 2. Check Active Session from Supabase
-    const checkSession = async () => {
+    const initAuth = async () => {
       try {
-        const { data: { session } } = await supabase.auth.getSession();
+        const { data: { session }, error } = await supabase.auth.getSession();
+        if (error) throw error;
+        
         if (session?.user) {
           setUser({
             id: session.user.id,
@@ -35,29 +41,38 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
           });
         }
       } catch (error) {
-        console.error('Error checking session:', error);
+        console.warn('Supabase auth unavailable or not configured:', error);
+        // Do not block app loading on auth error
       } finally {
         setLoading(false);
       }
     };
 
-    checkSession();
+    initAuth();
 
     // 3. Listen for Auth Changes (Login, Logout, etc.)
-    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
-      if (session?.user) {
-        setUser({
-          id: session.user.id,
-          email: session.user.email || '',
-          name: session.user.user_metadata?.name || 'User',
-        });
-      } else {
-        setUser(null);
-      }
-      setLoading(false);
-    });
+    try {
+      const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
+        if (session?.user) {
+          setUser({
+            id: session.user.id,
+            email: session.user.email || '',
+            name: session.user.user_metadata?.name || 'User',
+          });
+        } else {
+          setUser(null);
+        }
+        setLoading(false);
+      });
 
-    return () => subscription.unsubscribe();
+      return () => {
+        subscription.unsubscribe();
+      };
+    } catch (error) {
+      console.warn('Could not subscribe to auth changes:', error);
+      setLoading(false);
+      return () => {};
+    }
   }, []);
 
   const login = async (email: string, password?: string): Promise<{ success: boolean; error?: string }> => {
@@ -98,7 +113,11 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   };
 
   const logout = async () => {
-    await supabase.auth.signOut();
+    try {
+      await supabase.auth.signOut();
+    } catch (e) {
+      console.error(e);
+    }
     setUser(null);
   };
 

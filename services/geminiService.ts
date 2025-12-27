@@ -1,19 +1,44 @@
 import { GoogleGenAI, Type } from "@google/genai";
 import { GeneratedPassword, PasswordComplexity } from "../types";
 
-// Initialize Gemini Client
-// Note: In a production Vercel environment, ensure API_KEY is set in environment variables.
-const ai = new GoogleGenAI({ apiKey: process.env.API_KEY || '' });
-
 const MODEL_NAME = 'gemini-3-flash-preview';
 
+// Helper to safely get API Key from various environment configurations (Vite, Next.js, etc.)
+const getApiKey = (): string => {
+  // @ts-ignore - Check for Vite environment variable
+  if (typeof import.meta !== 'undefined' && import.meta.env && import.meta.env.VITE_API_KEY) {
+    // @ts-ignore
+    return import.meta.env.VITE_API_KEY;
+  }
+  // Check for standard process.env (requires bundler define or polyfill)
+  if (typeof process !== 'undefined' && process.env && process.env.API_KEY) {
+    return process.env.API_KEY;
+  }
+  return '';
+};
+
+// Lazy initialization to avoid top-level crashes
+let ai: GoogleGenAI | null = null;
+
+const getAI = () => {
+  if (!ai) {
+    const apiKey = getApiKey();
+    // Initialize even if key is missing so we can handle errors gracefully later
+    ai = new GoogleGenAI({ apiKey });
+  }
+  return ai;
+};
+
 export const generatePasswordWithGemini = async (inputWord: string, complexity: PasswordComplexity): Promise<GeneratedPassword[]> => {
-  if (!process.env.API_KEY) {
+  const apiKey = getApiKey();
+  
+  if (!apiKey) {
     console.warn("API Key missing. Returning fallback mock data.");
     return mockGenerate(inputWord, complexity);
   }
 
   try {
+    const client = getAI();
     let strategyInstruction = '';
     switch (complexity) {
       case 'easy':
@@ -55,7 +80,7 @@ export const generatePasswordWithGemini = async (inputWord: string, complexity: 
       Provide a strength rating and a brief explanation of why it fits the "${complexity}" style.
     `;
 
-    const response = await ai.models.generateContent({
+    const response = await client.models.generateContent({
       model: MODEL_NAME,
       contents: prompt,
       config: {
