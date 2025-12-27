@@ -2,13 +2,15 @@ import { GoogleGenAI, Type } from "@google/genai";
 import { GeneratedPassword, PasswordComplexity } from "../types";
 
 // Initialize Gemini Client
-// Note: In a production Vercel environment, ensure API_KEY is set in environment variables.
-const ai = new GoogleGenAI({ apiKey: process.env.API_KEY || '' });
+// Safety check: ensure 'process' exists before accessing it to prevent browser crashes
+const apiKey = (typeof process !== 'undefined' && process.env) ? process.env.API_KEY : '';
+const ai = new GoogleGenAI({ apiKey: apiKey });
 
 const MODEL_NAME = 'gemini-3-flash-preview';
 
 export const generatePasswordWithGemini = async (inputWord: string, complexity: PasswordComplexity): Promise<GeneratedPassword[]> => {
-  if (!process.env.API_KEY) {
+  // Check if key is valid (not empty)
+  if (!apiKey) {
     console.warn("API Key missing. Returning fallback mock data.");
     return mockGenerate(inputWord, complexity);
   }
