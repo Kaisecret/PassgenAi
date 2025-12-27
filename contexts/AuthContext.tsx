@@ -128,6 +128,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         setUser(null);
         setLoading(false);
       } else if (event === 'INITIAL_SESSION') {
+        // Just ensure loading is off
         setLoading(false);
       }
     });
@@ -143,12 +144,24 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     if (!password) return { success: false, error: "Password is required" };
     
     try {
-      const { error } = await supabase.auth.signInWithPassword({
+      const { data, error } = await supabase.auth.signInWithPassword({
         email,
         password,
       });
 
       if (error) throw error;
+
+      // Optimistic Update: Set user immediately so UI doesn't lag
+      if (data.session?.user && mounted.current) {
+        const basicUser: User = {
+          id: data.session.user.id,
+          email: data.session.user.email || '',
+          name: data.session.user.user_metadata?.name || 'User',
+          avatar_url: data.session.user.user_metadata?.avatar_url
+        };
+        setUser(basicUser);
+      }
+
       return { success: true };
     } catch (error: any) {
       return { success: false, error: error.message || 'Login failed' };
@@ -170,6 +183,18 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       });
 
       if (error) throw error;
+
+      // Optimistic Update: If session is returned (email confirm disabled), set user immediately
+      if (data.session?.user && mounted.current) {
+        const basicUser: User = {
+          id: data.session.user.id,
+          email: data.session.user.email || '',
+          name: data.session.user.user_metadata?.name || 'User',
+          avatar_url: data.session.user.user_metadata?.avatar_url
+        };
+        setUser(basicUser);
+      }
+
       return { success: true, session: data.session };
     } catch (error: any) {
       return { success: false, error: error.message || 'Registration failed' };

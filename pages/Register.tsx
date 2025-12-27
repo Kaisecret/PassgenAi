@@ -20,23 +20,24 @@ const Register: React.FC = () => {
     setIsLoading(true);
 
     try {
+      // 1. Attempt to register
       const result = await register(name, email, password);
       
       if (result.success) {
-        // Since Email Confirmation is DISABLED, we expect immediate session or ability to login.
+        // 2. If session is returned immediately (Email Confirm OFF), go to App
         if (result.session) {
           navigate(AppRoutes.GENERATOR);
           return;
         } 
         
-        // Fallback: If session wasn't returned immediately, force a login.
+        // 3. Fallback: If no session, try explicit login (Handles some edge cases)
         const loginResult = await login(email, password);
         
         if (loginResult.success) {
           navigate(AppRoutes.GENERATOR);
         } else {
-          // If login fails here, it is a genuine error (e.g. rate limit), not a confirmation wait.
-          setError('Account created, but automatic login failed. Please try logging in manually.');
+          // 4. Only if both fail (likely need email confirm or rate limit)
+          setError(loginResult.error || 'Account created. Please check if you need to verify your email, then login.');
           setIsLoading(false);
         }
       } else {
