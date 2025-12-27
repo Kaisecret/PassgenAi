@@ -7,7 +7,7 @@ import Button from '../components/Button';
 import Input from '../components/Input';
 
 const Settings: React.FC = () => {
-  const { user, updateUser } = useAuth(); // We'll assume updateUser is added to context or we handle local state
+  const { user, updateUser } = useAuth();
   const [loading, setLoading] = useState(false);
   const [fullName, setFullName] = useState('');
   const [avatarUrl, setAvatarUrl] = useState('');
@@ -65,7 +65,9 @@ const Settings: React.FC = () => {
       const { error } = await supabase.from('profiles').upsert(updates);
       if (error) throw error;
       
-      // Optionally update local context if needed, but for now we just show success
+      // Update global context so the navbar reflects changes immediately
+      await updateUser();
+      
       setMessage({ text: 'Profile updated successfully!', type: 'success' });
     } catch (error: any) {
       setMessage({ text: error.message || 'Error updating profile', type: 'error' });
@@ -113,6 +115,9 @@ const Settings: React.FC = () => {
         if (updateError) throw updateError;
         
         setAvatarUrl(data.publicUrl);
+        // Update global context
+        await updateUser();
+        
         setMessage({ text: 'Avatar uploaded successfully!', type: 'success' });
       }
 
@@ -124,6 +129,13 @@ const Settings: React.FC = () => {
   };
 
   if (!user) return <div className="text-center text-slate-400 mt-10">Please log in to view settings.</div>;
+
+  // Safe Fallback for Avatar Initials
+  const getInitials = () => {
+    if (fullName && fullName.length > 0) return fullName.charAt(0).toUpperCase();
+    if (user.email && user.email.length > 0) return user.email.charAt(0).toUpperCase();
+    return 'U';
+  };
 
   return (
     <div className="max-w-2xl mx-auto">
@@ -157,7 +169,7 @@ const Settings: React.FC = () => {
                 {avatarUrl ? (
                   <img src={avatarUrl} alt="Avatar" className="w-full h-full object-cover" />
                 ) : (
-                  fullName.charAt(0).toUpperCase() || user.email.charAt(0).toUpperCase()
+                  getInitials()
                 )}
               </div>
               
