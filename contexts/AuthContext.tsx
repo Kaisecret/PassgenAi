@@ -66,16 +66,13 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     // Main Initialization Logic
     const initializeAuth = async () => {
       try {
-        // 1. Get Session directly (usually synchronous-like if in local storage)
+        // 1. Get Session directly
         const { data: { session }, error } = await supabase.auth.getSession();
         
-        if (error) {
-           throw error;
-        }
+        if (error) throw error;
 
         if (session?.user) {
           // 2. Construct User immediately from Session Data
-          // We do NOT wait for the 'profiles' table fetch here to avoid blocking the UI
           const basicUser: User = {
             id: session.user.id,
             email: session.user.email || '',
@@ -85,7 +82,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
           if (mounted.current) {
             setUser(basicUser);
-            // UNBLOCK UI IMMEDIATELY
+            // UNBLOCK UI IMMEDIATELY to prevent blue screen
             setLoading(false);
           }
 
@@ -116,7 +113,6 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
       if (event === 'SIGNED_IN' || event === 'TOKEN_REFRESHED' || event === 'USER_UPDATED') {
         if (session?.user) {
-          // Update user state
           const basicUser: User = {
             id: session.user.id,
             email: session.user.email || '',
@@ -132,7 +128,6 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         setUser(null);
         setLoading(false);
       } else if (event === 'INITIAL_SESSION') {
-        // Supabase sometimes fires this. Ensure loading is off.
         setLoading(false);
       }
     });
@@ -224,7 +219,6 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       updateUser
     }}>
       {loading ? (
-        // Optional: Simple Loading Spinner instead of blank screen
         <div className="min-h-screen flex items-center justify-center bg-slate-950">
            <div className="w-8 h-8 border-4 border-brand-500 border-t-transparent rounded-full animate-spin"></div>
         </div>
