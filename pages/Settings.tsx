@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Link } from 'react-router-dom';
+import { Link, Navigate } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext';
 import { supabase } from '../services/supabase';
 import { AppRoutes } from '../types';
@@ -14,8 +14,14 @@ const Settings: React.FC = () => {
   const [message, setMessage] = useState<{ text: string; type: 'success' | 'error' } | null>(null);
   const [uploading, setUploading] = useState(false);
 
+  // If not logged in, redirect immediately rather than rendering partial UI
+  if (!user) {
+    return <Navigate to={AppRoutes.LOGIN} replace />;
+  }
+
   // Fetch profile on mount
   useEffect(() => {
+    let isMounted = true;
     const getProfile = async () => {
       try {
         if (!user) return;
@@ -25,27 +31,29 @@ const Settings: React.FC = () => {
           .from('profiles')
           .select('full_name, avatar_url')
           .eq('id', user.id)
-          .single();
+          .maybeSingle();
 
         if (error && status !== 406) {
           throw error;
         }
 
-        if (data) {
-          setFullName(data.full_name || '');
-          setAvatarUrl(data.avatar_url || '');
-        } else {
-          // If no profile exists yet (race condition with trigger), fall back to Auth metadata
-          setFullName(user.name || '');
+        if (isMounted) {
+          if (data) {
+            setFullName(data.full_name || '');
+            setAvatarUrl(data.avatar_url || '');
+          } else {
+            setFullName(user.name || '');
+          }
         }
       } catch (error: any) {
         console.error('Error loading user data!', error.message);
       } finally {
-        setLoading(false);
+        if (isMounted) setLoading(false);
       }
     };
 
     getProfile();
+    return () => { isMounted = false; };
   }, [user]);
 
   const handleUpdateProfile = async (e: React.FormEvent) => {
@@ -78,6 +86,7 @@ const Settings: React.FC = () => {
 
   const uploadAvatar = async (event: React.ChangeEvent<HTMLInputElement>) => {
     try {
+      if (!user) return;
       setUploading(true);
       setMessage(null);
 
@@ -87,7 +96,7 @@ const Settings: React.FC = () => {
 
       const file = event.target.files[0];
       const fileExt = file.name.split('.').pop();
-      const fileName = `${user?.id}-${Math.random()}.${fileExt}`;
+      const fileName = `${user.id}-${Math.random()}.${fileExt}`;
       const filePath = `${fileName}`;
 
       // 1. Upload to Supabase Storage
@@ -103,23 +112,20 @@ const Settings: React.FC = () => {
       const { data } = supabase.storage.from('avatars').getPublicUrl(filePath);
       
       // 3. Update Profile with new Avatar URL
-      if (user) {
-        const { error: updateError } = await supabase
-          .from('profiles')
-          .upsert({
-            id: user.id,
-            avatar_url: data.publicUrl,
-            updated_at: new Date().toISOString(),
-          });
-        
-        if (updateError) throw updateError;
-        
-        setAvatarUrl(data.publicUrl);
-        // Update global context
-        await updateUser();
-        
-        setMessage({ text: 'Avatar uploaded successfully!', type: 'success' });
-      }
+      const { error: updateError } = await supabase
+        .from('profiles')
+        .upsert({
+          id: user.id,
+          avatar_url: data.publicUrl,
+          updated_at: new Date().toISOString(),
+        });
+      
+      if (updateError) throw updateError;
+      
+      setAvatarUrl(data.publicUrl);
+      await updateUser();
+      
+      setMessage({ text: 'Avatar uploaded successfully!', type: 'success' });
 
     } catch (error: any) {
       setMessage({ text: error.message || 'Error uploading avatar', type: 'error' });
@@ -128,12 +134,10 @@ const Settings: React.FC = () => {
     }
   };
 
-  if (!user) return <div className="text-center text-slate-400 mt-10">Please log in to view settings.</div>;
-
   // Safe Fallback for Avatar Initials
   const getInitials = () => {
     if (fullName && fullName.length > 0) return fullName.charAt(0).toUpperCase();
-    if (user.email && user.email.length > 0) return user.email.charAt(0).toUpperCase();
+    if (user?.email && user.email.length > 0) return user.email.charAt(0).toUpperCase();
     return 'U';
   };
 

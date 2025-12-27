@@ -1,4 +1,4 @@
-import React, { createContext, useContext, useState, useEffect } from 'react';
+import React, { createContext, useContext, useState, useEffect, useRef } from 'react';
 import { User, AuthState } from '../types';
 import { LOCAL_STORAGE_KEYS, MAX_GUEST_ATTEMPTS } from '../constants';
 import { supabase } from '../services/supabase';
@@ -18,83 +18,75 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const [user, setUser] = useState<User | null>(null);
   const [guestUsageCount, setGuestUsageCount] = useState<number>(0);
   const [loading, setLoading] = useState(true);
+  const mounted = useRef(true);
 
   const fetchUser = async (sessionUser: any) => {
-    // Attempt to fetch extra profile data if available
-    if (!sessionUser) {
-      setUser(null);
-      return;
+    try {
+      if (!sessionUser) {
+        if (mounted.current) setUser(null);
+        return;
+      }
+
+      // Default basic info
+      let userData: User = {
+        id: sessionUser.id,
+        email: sessionUser.email || '',
+        name: sessionUser.user_metadata?.name || 'User',
+        avatar_url: sessionUser.user_metadata?.avatar_url
+      };
+
+      // Try fetching from profiles table
+      const { data, error } = await supabase
+        .from('profiles')
+        .select('*')
+        .eq('id', sessionUser.id)
+        .maybeSingle(); // Use maybeSingle to avoid errors if row doesn't exist
+
+      if (data) {
+        userData.name = data.full_name || userData.name;
+        userData.avatar_url = data.avatar_url || userData.avatar_url;
+      }
+
+      if (mounted.current) setUser(userData);
+    } catch (err) {
+      console.error("Error fetching user details:", err);
+      // Fallback to basic session info if profile fetch fails
+      if (mounted.current && sessionUser) {
+        setUser({
+          id: sessionUser.id,
+          email: sessionUser.email || '',
+          name: sessionUser.user_metadata?.name || 'User',
+        });
+      }
     }
-
-    // Default basic info
-    let userData: User = {
-      id: sessionUser.id,
-      email: sessionUser.email || '',
-      name: sessionUser.user_metadata?.name || 'User',
-      avatar_url: sessionUser.user_metadata?.avatar_url
-    };
-
-    // Try fetching from profiles table
-    const { data } = await supabase
-      .from('profiles')
-      .select('*')
-      .eq('id', sessionUser.id)
-      .single();
-
-    if (data) {
-      userData.name = data.full_name || userData.name;
-      userData.avatar_url = data.avatar_url || userData.avatar_url;
-    }
-
-    setUser(userData);
   };
 
   useEffect(() => {
-    // 1. Initialize Guest Count from LocalStorage
+    mounted.current = true;
+
+    // 1. Initialize Guest Count
     try {
       const count = parseInt(localStorage.getItem(LOCAL_STORAGE_KEYS.GUEST_COUNT) || '0', 10);
-      setGuestUsageCount(count);
+      setGuestUsageCount(isNaN(count) ? 0 : count);
     } catch (e) {
       console.warn("Could not access local storage");
     }
 
-    // 2. Check Active Session from Supabase
-    const initAuth = async () => {
-      try {
-        const { data: { session }, error } = await supabase.auth.getSession();
-        if (error) throw error;
-        
-        if (session?.user) {
-          await fetchUser(session.user);
-        }
-      } catch (error) {
-        console.warn('Supabase auth unavailable or not configured:', error);
-      } finally {
-        setLoading(false);
+    // 2. Setup Auth Listener
+    // This handles both initial session and future changes
+    const { data: { subscription } } = supabase.auth.onAuthStateChange(async (_event, session) => {
+      if (session?.user) {
+         await fetchUser(session.user);
+      } else {
+        if (mounted.current) setUser(null);
       }
+      if (mounted.current) setLoading(false);
+    });
+
+    return () => {
+      mounted.current = false;
+      subscription.unsubscribe();
     };
-
-    initAuth();
-
-    // 3. Listen for Auth Changes
-    try {
-      const { data: { subscription } } = supabase.auth.onAuthStateChange(async (_event, session) => {
-        if (session?.user) {
-           await fetchUser(session.user);
-        } else {
-          setUser(null);
-        }
-        setLoading(false);
-      });
-
-      return () => {
-        subscription.unsubscribe();
-      };
-    } catch (error) {
-      console.warn('Could not subscribe to auth changes:', error);
-      setLoading(false);
-      return () => {};
-    }
   }, []);
 
   const login = async (email: string, password?: string): Promise<{ success: boolean; error?: string }> => {
@@ -140,7 +132,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     } catch (e) {
       console.error(e);
     }
-    setUser(null);
+    if (mounted.current) setUser(null);
   };
 
   const incrementGuestUsage = () => {
@@ -152,9 +144,13 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   };
 
   const updateUser = async () => {
-    const { data: { session } } = await supabase.auth.getSession();
-    if (session?.user) {
-      await fetchUser(session.user);
+    try {
+      const { data: { session } } = await supabase.auth.getSession();
+      if (session?.user) {
+        await fetchUser(session.user);
+      }
+    } catch (e) {
+      console.error("Failed to update user context", e);
     }
   };
 
