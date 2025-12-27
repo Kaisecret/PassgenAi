@@ -3,6 +3,7 @@ export interface User {
   email: string;
   name: string;
   password?: string;
+  avatar_url?: string;
 }
 
 export interface GeneratedPassword {
@@ -23,5 +24,6 @@ export enum AppRoutes {
   HOME = '/',
   LOGIN = '/login',
   REGISTER = '/register',
-  GENERATOR = '/app'
+  GENERATOR = '/app',
+  SETTINGS = '/settings'
 }

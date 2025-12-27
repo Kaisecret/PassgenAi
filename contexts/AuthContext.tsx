@@ -9,6 +9,7 @@ interface AuthContextType extends AuthState {
   logout: () => void;
   incrementGuestUsage: () => void;
   hasAttemptsRemaining: boolean;
+  updateUser: () => Promise<void>;
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
@@ -17,6 +18,36 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const [user, setUser] = useState<User | null>(null);
   const [guestUsageCount, setGuestUsageCount] = useState<number>(0);
   const [loading, setLoading] = useState(true);
+
+  const fetchUser = async (sessionUser: any) => {
+    // Attempt to fetch extra profile data if available
+    if (!sessionUser) {
+      setUser(null);
+      return;
+    }
+
+    // Default basic info
+    let userData: User = {
+      id: sessionUser.id,
+      email: sessionUser.email || '',
+      name: sessionUser.user_metadata?.name || 'User',
+      avatar_url: sessionUser.user_metadata?.avatar_url
+    };
+
+    // Try fetching from profiles table
+    const { data } = await supabase
+      .from('profiles')
+      .select('*')
+      .eq('id', sessionUser.id)
+      .single();
+
+    if (data) {
+      userData.name = data.full_name || userData.name;
+      userData.avatar_url = data.avatar_url || userData.avatar_url;
+    }
+
+    setUser(userData);
+  };
 
   useEffect(() => {
     // 1. Initialize Guest Count from LocalStorage
@@ -34,15 +65,10 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         if (error) throw error;
         
         if (session?.user) {
-          setUser({
-            id: session.user.id,
-            email: session.user.email || '',
-            name: session.user.user_metadata?.name || 'User',
-          });
+          await fetchUser(session.user);
         }
       } catch (error) {
         console.warn('Supabase auth unavailable or not configured:', error);
-        // Do not block app loading on auth error
       } finally {
         setLoading(false);
       }
@@ -50,15 +76,11 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
     initAuth();
 
-    // 3. Listen for Auth Changes (Login, Logout, etc.)
+    // 3. Listen for Auth Changes
     try {
-      const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
+      const { data: { subscription } } = supabase.auth.onAuthStateChange(async (_event, session) => {
         if (session?.user) {
-          setUser({
-            id: session.user.id,
-            email: session.user.email || '',
-            name: session.user.user_metadata?.name || 'User',
-          });
+           await fetchUser(session.user);
         } else {
           setUser(null);
         }
@@ -100,7 +122,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         password,
         options: {
           data: {
-            name: name, // Save name in user_metadata
+            name: name,
           },
         },
       });
@@ -129,6 +151,13 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     }
   };
 
+  const updateUser = async () => {
+    const { data: { session } } = await supabase.auth.getSession();
+    if (session?.user) {
+      await fetchUser(session.user);
+    }
+  };
+
   const hasAttemptsRemaining = user !== null || guestUsageCount < MAX_GUEST_ATTEMPTS;
 
   return (
@@ -140,7 +169,8 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       register,
       logout,
       incrementGuestUsage,
-      hasAttemptsRemaining
+      hasAttemptsRemaining,
+      updateUser
     }}>
       {!loading && children}
     </AuthContext.Provider>

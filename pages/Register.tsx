@@ -25,21 +25,25 @@ const Register: React.FC = () => {
       const result = await register(name, email, password);
       
       if (result.success) {
-        // If session exists, navigate immediately
+        // SCENARIO 1: Session returned immediately (Email Confirmation is DISABLED in Supabase)
         if (result.session) {
           navigate(AppRoutes.GENERATOR);
+          return;
+        } 
+        
+        // SCENARIO 2: No session returned. 
+        // Could mean confirmation is required OR "Allow Unverified Logins" is enabled but session wasn't passed back.
+        // We attempt a manual login to check.
+        const loginResult = await login(email, password);
+        
+        if (loginResult.success) {
+          // If login works, we are good to go!
+          navigate(AppRoutes.GENERATOR);
         } else {
-          // If no session (e.g. "Auto Sign-in" is off but "Confirm Email" is also off), 
-          // try to login manually with the password we have.
-          const loginResult = await login(email, password);
-          if (loginResult.success) {
-            navigate(AppRoutes.GENERATOR);
-          } else {
-            // Only if manual login also fails do we show the message
-            setIsLoading(false);
-            setSuccessMsg('Account created successfully! Please sign in.');
-            setPassword('');
-          }
+          // SCENARIO 3: Login failed. This implies Email Confirmation IS REQUIRED and still pending.
+          setIsLoading(false);
+          setSuccessMsg('Account created! Please check your email to confirm your account.');
+          setPassword('');
         }
       } else {
         setError(result.error || 'Failed to create account.');
@@ -71,7 +75,7 @@ const Register: React.FC = () => {
             <div className="w-12 h-12 bg-green-500/20 text-green-400 rounded-full flex items-center justify-center mx-auto mb-4">
                <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M5 13l4 4L19 7"></path></svg>
             </div>
-            <h3 className="text-lg font-semibold text-green-400 mb-2">Success!</h3>
+            <h3 className="text-lg font-semibold text-green-400 mb-2">Check Your Email</h3>
             <p className="text-slate-300 text-sm mb-6">{successMsg}</p>
             <Link to={AppRoutes.LOGIN}>
               <Button className="w-full">Go to Login</Button>

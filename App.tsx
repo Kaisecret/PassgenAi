@@ -6,6 +6,7 @@ import Landing from './pages/Landing';
 import Login from './pages/Login';
 import Register from './pages/Register';
 import Generator from './pages/Generator';
+import Settings from './pages/Settings';
 import { AppRoutes } from './types';
 
 const App: React.FC = () => {
@@ -18,6 +19,7 @@ const App: React.FC = () => {
             <Route path={AppRoutes.LOGIN} element={<Login />} />
             <Route path={AppRoutes.REGISTER} element={<Register />} />
             <Route path={AppRoutes.GENERATOR} element={<Generator />} />
+            <Route path={AppRoutes.SETTINGS} element={<Settings />} />
             {/* Fallback route */}
             <Route path="*" element={<Navigate to={AppRoutes.HOME} replace />} />
           </Routes>
