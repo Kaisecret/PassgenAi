@@ -1,0 +1,5 @@
+{
+  "name": "PassGen AI",
+  "description": "A smart password generator that creates memorable, secure passwords based on your keywords using Gemini AI. Features guest limits and secure account management simulation.",
+  "requestFramePermissions": []
+}
