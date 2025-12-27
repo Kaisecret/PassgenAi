@@ -12,7 +12,7 @@ const Register: React.FC = () => {
   const [error, setError] = useState('');
   const [successMsg, setSuccessMsg] = useState('');
   const [isLoading, setIsLoading] = useState(false);
-  const { register } = useAuth();
+  const { register, login } = useAuth();
   const navigate = useNavigate();
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -25,24 +25,29 @@ const Register: React.FC = () => {
       const result = await register(name, email, password);
       
       if (result.success) {
-        // CRITICAL CHECK:
-        // If Supabase "Confirm Email" is ON, 'result.session' will be null.
-        // If "Confirm Email" is OFF, 'result.session' will exist and we can redirect.
+        // If session exists, navigate immediately
         if (result.session) {
           navigate(AppRoutes.GENERATOR);
         } else {
-          setIsLoading(false);
-          setSuccessMsg('Account created successfully! Please check your email to confirm your account before logging in.');
-          // Clear form
-          setPassword('');
+          // If no session (e.g. "Auto Sign-in" is off but "Confirm Email" is also off), 
+          // try to login manually with the password we have.
+          const loginResult = await login(email, password);
+          if (loginResult.success) {
+            navigate(AppRoutes.GENERATOR);
+          } else {
+            // Only if manual login also fails do we show the message
+            setIsLoading(false);
+            setSuccessMsg('Account created successfully! Please sign in.');
+            setPassword('');
+          }
         }
       } else {
         setError(result.error || 'Failed to create account.');
+        setIsLoading(false);
       }
     } catch (err) {
       setError('An unexpected error occurred. Please try again.');
-    } finally {
-      if (!successMsg) setIsLoading(false);
+      setIsLoading(false);
     }
   };
 

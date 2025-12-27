@@ -23,8 +23,8 @@ const Login: React.FC = () => {
       if (result.success) {
         navigate(AppRoutes.GENERATOR);
       } else {
-        // Show the actual error message from Supabase.
-        // "Invalid login credentials" is generic, but if email is unconfirmed, Supabase often returns that or "Email not confirmed".
+        // Supabase returns useful error messages (e.g., "Invalid login credentials").
+        // We display this error on the Input field or via the error state.
         setError(result.error || 'Login failed.');
       }
     } catch (err) {
@@ -57,7 +57,7 @@ const Login: React.FC = () => {
             value={email}
             onChange={(e) => setEmail(e.target.value)}
             required
-            error={error}
+            error={error} // Shows error message under the email field
             disabled={isLoading}
           />
           <Input 
@@ -70,12 +70,6 @@ const Login: React.FC = () => {
             disabled={isLoading}
           />
           
-          {error && error.toLowerCase().includes('credential') && (
-            <div className="text-xs text-slate-400 bg-slate-800/50 p-3 rounded-lg border border-slate-700">
-              <span className="font-bold text-slate-300">Tip:</span> If you just created this account, you might need to check your email inbox to verify it, or disable "Confirm Email" in your Supabase dashboard.
-            </div>
-          )}
-
           <Button type="submit" className="w-full" isLoading={isLoading}>
             Sign In
           </Button>
