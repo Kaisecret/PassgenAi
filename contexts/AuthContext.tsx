@@ -20,51 +20,42 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const [loading, setLoading] = useState(true);
   const mounted = useRef(true);
 
-  const fetchUser = async (sessionUser: any) => {
+  // Helper to safely construct user object
+  const constructUser = async (sessionUser: any): Promise<User | null> => {
+    if (!sessionUser) return null;
+
+    // 1. Basic info from session
+    let userData: User = {
+      id: sessionUser.id,
+      email: sessionUser.email || '',
+      // Safe access to metadata, fallback to 'User'
+      name: sessionUser.user_metadata?.name || 'User',
+      avatar_url: sessionUser.user_metadata?.avatar_url
+    };
+
+    // 2. Fetch profile details from database
     try {
-      if (!sessionUser) {
-        if (mounted.current) setUser(null);
-        return;
-      }
-
-      // Default basic info
-      let userData: User = {
-        id: sessionUser.id,
-        email: sessionUser.email || '',
-        name: sessionUser.user_metadata?.name || 'User',
-        avatar_url: sessionUser.user_metadata?.avatar_url
-      };
-
-      // Try fetching from profiles table
-      const { data, error } = await supabase
+      const { data } = await supabase
         .from('profiles')
         .select('*')
         .eq('id', sessionUser.id)
-        .maybeSingle(); // Use maybeSingle to avoid errors if row doesn't exist
+        .maybeSingle();
 
       if (data) {
         userData.name = data.full_name || userData.name;
         userData.avatar_url = data.avatar_url || userData.avatar_url;
       }
-
-      if (mounted.current) setUser(userData);
     } catch (err) {
-      console.error("Error fetching user details:", err);
-      // Fallback to basic session info if profile fetch fails
-      if (mounted.current && sessionUser) {
-        setUser({
-          id: sessionUser.id,
-          email: sessionUser.email || '',
-          name: sessionUser.user_metadata?.name || 'User',
-        });
-      }
+      console.warn("Profile fetch failed, using session data only", err);
     }
+
+    return userData;
   };
 
   useEffect(() => {
     mounted.current = true;
 
-    // 1. Initialize Guest Count
+    // Initialize Guest Count from LocalStorage
     try {
       const count = parseInt(localStorage.getItem(LOCAL_STORAGE_KEYS.GUEST_COUNT) || '0', 10);
       setGuestUsageCount(isNaN(count) ? 0 : count);
@@ -72,15 +63,42 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       console.warn("Could not access local storage");
     }
 
-    // 2. Setup Auth Listener
-    // This handles both initial session and future changes
-    const { data: { subscription } } = supabase.auth.onAuthStateChange(async (_event, session) => {
-      if (session?.user) {
-         await fetchUser(session.user);
-      } else {
+    // Initialization Logic
+    const initializeAuth = async () => {
+      try {
+        // 1. Get initial session explicitly
+        const { data: { session } } = await supabase.auth.getSession();
+        
+        if (session?.user) {
+          const userDetails = await constructUser(session.user);
+          if (mounted.current) setUser(userDetails);
+        } else {
+          if (mounted.current) setUser(null);
+        }
+      } catch (error) {
+        console.error("Auth initialization error:", error);
+        if (mounted.current) setUser(null);
+      } finally {
+        if (mounted.current) setLoading(false);
+      }
+    };
+
+    initializeAuth();
+
+    // 2. Listen for subsequent changes
+    const { data: { subscription } } = supabase.auth.onAuthStateChange(async (event, session) => {
+      if (!mounted.current) return;
+
+      // Only handle updates if we aren't loading (initial load handled by getSession)
+      // Or if the event explicitly indicates a change that requires re-fetching
+      if (event === 'SIGNED_IN' || event === 'TOKEN_REFRESHED' || event === 'USER_UPDATED') {
+        if (session?.user) {
+          const userDetails = await constructUser(session.user);
+          if (mounted.current) setUser(userDetails);
+        }
+      } else if (event === 'SIGNED_OUT') {
         if (mounted.current) setUser(null);
       }
-      if (mounted.current) setLoading(false);
     });
 
     return () => {
@@ -147,7 +165,8 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     try {
       const { data: { session } } = await supabase.auth.getSession();
       if (session?.user) {
-        await fetchUser(session.user);
+        const updatedUser = await constructUser(session.user);
+        if (mounted.current) setUser(updatedUser);
       }
     } catch (e) {
       console.error("Failed to update user context", e);

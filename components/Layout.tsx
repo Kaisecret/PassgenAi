@@ -26,6 +26,9 @@ const Layout: React.FC<LayoutProps> = ({ children }) => {
   const isActive = (path: string) => location.pathname === path;
   const isLandingPage = location.pathname === AppRoutes.HOME;
 
+  // Safety check: ensure user object has properties before accessing
+  const userName = user?.name || 'User';
+
   return (
     <div className="min-h-screen flex flex-col bg-slate-950 text-slate-100 font-sans">
       {/* Navbar */}
@@ -42,7 +45,7 @@ const Layout: React.FC<LayoutProps> = ({ children }) => {
             {user ? (
               <>
                 <div className="hidden md:flex items-center gap-4">
-                  <span className="text-sm text-slate-400">Hello, {user.name}</span>
+                  <span className="text-sm text-slate-400">Hello, {userName}</span>
                   <Link 
                     to={AppRoutes.SETTINGS}
                     className={`text-sm font-medium transition-colors ${isActive(AppRoutes.SETTINGS) ? 'text-white' : 'text-slate-400 hover:text-white'}`}
